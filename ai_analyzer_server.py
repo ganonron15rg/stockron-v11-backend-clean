@@ -1,41 +1,142 @@
-import math, pandas as pd, yfinance as yf
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from typing import Optional
+from fastapi import FastAPI
+from pydantic import BaseModel
+import yfinance as yf
+from datetime import datetime
 
-app = FastAPI(title="Stockron Analyzer Backend (Clean)", version="v11-basic-1.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app = FastAPI(title="Stockron Analyzer v11", version="1.0.0")
 
-def sma(s, w): return s.rolling(window=w).mean()
-def rsi(s, w=14):
-    delta = s.diff(); up, down = delta.clip(lower=0), -delta.clip(upper=0)
-    ma_up, ma_down = up.ewm(com=w-1, adjust=False).mean(), down.ewm(com=w-1, adjust=False).mean()
-    rs = ma_up / (ma_down + 1e-9)
-    return 100 - (100 / (1 + rs))
+# ====== Models ======
 
-def atr(h,l,c,w=14):
-    prev = c.shift(1)
-    tr = pd.concat([(h-l).abs(), (h-prev).abs(), (l-prev).abs()], axis=1).max(axis=1)
-    return tr.rolling(window=w).mean()
-
-class AnalyzeIn(BaseModel):
+class StockRequest(BaseModel):
     ticker: str
-    timeframe: Optional[str] = Field(default="6mo")
+    timeframe: str = "6mo"
+    dsl: str | None = None
+    notes: str | None = None
+
+
+# ====== Helper Functions ======
+
+def calculate_scores(info: dict):
+    """חישוב מדדים בסיסי עבור מניה לפי נתוני yfinance"""
+    pe = info.get("trailingPE") or 0
+    growth = info.get("earningsGrowth") or 0
+    debt = info.get("debtToEquity") or 0
+    beta = info.get("beta") or 1
+
+    quant = max(0, min(100, 70 - (pe * 1.5)))
+    quality = max(0, min(100, 50 + (growth * 100)))
+    catalyst = max(0, min(100, 40 + (1 / beta * 10)))
+    overall = round((quant * 0.4) + (quality * 0.4) + (catalyst * 0.2), 2)
+
+    return quant, quality, catalyst, overall
+
+
+def determine_stance(overall_score: float):
+    """קובע אם ההמלצה היא קנייה, החזקה או המתנה"""
+    if overall_score >= 70:
+        return "Buy"
+    elif overall_score >= 50:
+        return "Hold"
+    else:
+        return "Wait"
+
+
+def determine_risk_level(beta: float | None):
+    """קובע רמת סיכון לפי Beta"""
+    if beta is None:
+        return "Unknown"
+    if beta < 0.8:
+        return "Low"
+    elif beta < 1.2:
+        return "Medium"
+    elif beta < 1.6:
+        return "High"
+    else:
+        return "Very High"
+
+
+# ====== Routes ======
 
 @app.get("/healthz")
-def healthz(): return {"status": "ok", "version": "v11-basic-1.0.0"}
+def health_check():
+    return {"status": "ok", "version": "v11-basic-1.0.0"}
+
 
 @app.post("/analyze")
-def analyze(inp: AnalyzeIn):
-    t = inp.ticker.upper().strip()
-    if not t: raise HTTPException(400, "ticker required")
-    df = yf.download(t, period=inp.timeframe, interval="1d", auto_adjust=True, progress=False)
-    if df.empty: raise HTTPException(404, "No data")
-    price = float(df["Close"].iloc[-1])
-    sma50, rsi14 = float(sma(df["Close"],50).iloc[-1]), float(rsi(df["Close"]).iloc[-1])
-    atr14 = float(atr(df["High"],df["Low"],df["Close"]).iloc[-1])
-    buy = [round(sma50-atr14,2), round(sma50,2)]
-    sell = [round(price+atr14,2), round(price+2*atr14,2)]
-    return {"ticker":t,"price":price,"metrics":{"SMA50":sma50,"RSI14":rsi14,"ATR14":atr14},
-            "buy_zone":buy,"sell_zone":sell,"ai_stance":"Buy" if rsi14<60 else ("Hold" if rsi14<75 else "Wait")}
+def analyze_stock(request: StockRequest):
+    ticker = request.ticker.upper()
+    data = yf.Ticker(ticker)
+    info = data.info
+
+    # Fundamentals
+    fundamentals = {
+        "PE Ratio": info.get("trailingPE"),
+        "Forward PE": info.get("forwardPE"),
+        "PS Ratio": info.get("priceToSalesTrailing12Months"),
+        "PEG Ratio": info.get("pegRatio"),
+        "Revenue Growth": info.get("revenueGrowth"),
+        "EPS Growth": info.get("earningsGrowth"),
+        "Beta": info.get("beta"),
+        "Debt/Equity": info.get("debtToEquity")
+    }
+
+    # Scores
+    quant, quality, catalyst, overall = calculate_scores(info)
+    stance = determine_stance(overall)
+    risk_level = determine_risk_level(info.get("beta"))
+
+    # Buy/Sell Zones (מבוסס על מחיר נוכחי)
+    price = info.get("currentPrice") or 0
+    buy_zone = [round(price * 0.9, 2), round(price * 0.97, 2)] if price else [None, None]
+    sell_zone = [round(price * 1.05, 2), round(price * 1.15, 2)] if price else [None, None]
+
+    buy_sell_zones = {
+        "buy_zone": buy_zone,
+        "sell_zone": sell_zone,
+        "rationale": "אזורי קנייה ומכירה מבוססי תנועת מחיר ±10%"
+    }
+
+    # Educational Notes
+    educational_notes = [
+        "בדוק את מגמת ההכנסות ביחס לרווחיות.",
+        "מכפיל רווח גבוה עשוי להעיד על תמחור יתר.",
+        "מומלץ להשוות את ה-Beta לסקטור כדי להבין תנודתיות."
+    ]
+
+    # Build response
+    result = {
+        "ticker": ticker,
+        "company_name": info.get("longName"),
+        "sector": info.get("sector"),
+        "price": price,
+        "stance": stance,
+        "quant_score": quant,
+        "quality_score": quality,
+        "catalyst_score": catalyst,
+        "overall_score": overall,
+        "ai_summary": f"המניה {ticker} מדורגת '{stance}' עם ניקוד כולל של {overall}.",
+        "quant_summary": "הציון הכמותי משקלל מכפילים ויחסים פיננסיים.",
+        "quality_summary": "איכות החברה מוערכת לפי צמיחה, יציבות ורווחיות.",
+        "catalyst_summary": "פוטנציאל צמיחה מבוסס על קטליזטורים עסקיים וחיצוניים.",
+        "fundamentals_json": fundamentals,
+        "buy_sell_zones": buy_sell_zones,
+        "risk_level": risk_level,
+        "educational_notes": educational_notes,
+        "last_updated": datetime.utcnow().isoformat()
+    }
+
+    return result
+
+
+# ====== Screener Placeholder ======
+@app.post("/screener")
+def screener(strategy: dict):
+    """גרסה פשוטה לסורק – placeholder"""
+    return {
+        "strategy": strategy.get("strategy", "growth"),
+        "results": [
+            {"ticker": "NVDA", "overall_score": 88, "stance": "Buy"},
+            {"ticker": "AAPL", "overall_score": 74, "stance": "Hold"},
+            {"ticker": "PLX", "overall_score": 53, "stance": "Wait"}
+        ]
+    }
