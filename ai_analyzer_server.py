@@ -41,17 +41,6 @@ def health():
     }
 
 # ==============================================================
-# 📦 Request Schema
-# ==============================================================
-
-class AnalyzeRequest(BaseModel):
-    ticker: str
-    timeframe: Optional[str] = "6mo"
-    notes: Optional[str] = None
-    dsl: Optional[str] = None  # לשלב הבא - DSL formulas
-
-
-# ==============================================================
 # 🤖 Core Analysis Logic (Demo / Mock)
 # ==============================================================
 # בגרסה מלאה זה מתחבר ל-Stockron Engine / Yahoo API / AI Agent
@@ -79,14 +68,14 @@ def mock_catalyst_analysis() -> Dict[str, Any]:
         "ai_signal": random.choice(["Strong Buy", "Buy", "Hold", "Sell"])
     }
 
-
 # ==============================================================
 # 🔍 /analyze Endpoint
 # ==============================================================
 
 @app.post("/analyze")
-async def analyze_stock(request: AnalyzeRequest):
-    ticker = request.ticker.upper()
+async def analyze_stock(request: Request):
+    data = await request.json()
+    ticker = data.get("ticker", "Unknown").upper()
 
     # סימולציה של עיבוד — בגרסה הבאה יחובר למנוע ה-AI האמיתי
     quant = mock_quant_analysis()
@@ -102,7 +91,11 @@ async def analyze_stock(request: AnalyzeRequest):
     )
 
     # קביעת stance לפי הנתונים
-    avg_score = (quant["overall_score"] * 0.4 + quality["quality_score"] * 0.4 + random.uniform(40, 90) * 0.2)
+    avg_score = (
+        quant["overall_score"] * 0.4 +
+        quality["quality_score"] * 0.4 +
+        random.uniform(40, 90) * 0.2
+    )
     if avg_score >= 70:
         ai_stance = "Buy"
     elif avg_score >= 55:
@@ -120,7 +113,6 @@ async def analyze_stock(request: AnalyzeRequest):
         "ai_stance": ai_stance,
         "timestamp": datetime.utcnow().isoformat() + "Z"
     }
-
 
 # ==============================================================
 # 🚀 Local Run (Render auto-detects this port)
