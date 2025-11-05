@@ -1,0 +1,97 @@
+📦 STOCKRON ANALYZER v11.3 — BASE44 FRONTEND STRUCTURE
+──────────────────────────────────────────────────────────────
+🎯 PURPOSE:
+מערכת פרונט חכמה אחידה שמדברת ישירות עם Render Backend
+וללא כפילויות קוד — הכל עובד לפי זרימה אחת (Health → Analyze → Display)
+
+──────────────────────────────────────────────────────────────
+📁 ROOT STRUCTURE (src/)
+├── app/
+│   ├── layout.jsx           # Keepalive ping + Bubble
+│   ├── page.jsx             # Main Dashboard
+│   └── test/page.jsx        # Testing endpoint connections
+│
+├── components/
+│   ├── BackendStatusBubble.jsx  # Floating health monitor
+│   ├── ScoreCard.jsx            # Quant / Quality / Catalyst cards
+│   ├── FundamentalCard.jsx      # Fundamentals table
+│   ├── StanceIndicator.jsx      # Buy / Hold / Wait badge
+│   └── LoaderSpinner.jsx        # Animation for fetching
+│
+├── lib/
+│   ├── StockronEngine.js        # API logic + normalizeResponse()
+│   ├── useKeepalive.js          # (optional) custom hook for health checks
+│   └── constants.js             # URLs, colors, weights
+│
+├── styles/
+│   └── globals.css              # Tailwind + global themes
+│
+└── utils/
+    └── formatters.js            # אחידות בפורמטים (מספרים, אחוזים, תאריכים)
+──────────────────────────────────────────────────────────────
+🌍 URL CONSTANTS (lib/constants.js)
+export const API_BASE = "https://stockron-v11-backend-clean.onrender.com";
+export const ENDPOINTS = {
+  HEALTH: `${API_BASE}/health`,
+  ANALYZE: `${API_BASE}/analyze`
+};
+──────────────────────────────────────────────────────────────
+⚙️ MAIN FLOW:
+1️⃣ layout.jsx
+   - טוען once → מפעיל Keepalive כל 5 דקות
+   - מייבא את <BackendStatusBubble />
+
+2️⃣ BackendStatusBubble.jsx
+   - מוודא שהשרת פעיל
+   - מציג 🟢/🔴 עם שעה אחרונה + הודעת שגיאה
+
+3️⃣ StockronEngine.js
+   - שולח POST /analyze עם ticker
+   - ממיר תשובה לנתונים קריאים ל־UI
+
+4️⃣ Dashboard.jsx
+   - משתמש ב־fetchAnalysis() מה־Engine
+   - מציג את כל הקלפים:
+       [Scores, Fundamentals, Summary, AI Stance]
+
+──────────────────────────────────────────────────────────────
+📊 DESIGN & UX GUIDELINES:
+- צבעים אחידים:
+  primary → cyan, accent → orange
+  card → slate-900, background → slate-950
+
+- טיפוגרפיה:
+  font-family: "Heebo", sans-serif;
+  direction: rtl;
+
+- כפתור ראשי:
+  <button className="bg-cyan-500 hover:bg-cyan-600 text-white px-4 py-2 rounded-md shadow-md"/>
+
+──────────────────────────────────────────────────────────────
+🧩 COMPONENT COMMUNICATION:
+Dashboard → StockronEngine (fetchAnalysis)
+StockronEngine → Render API (/analyze)
+Render → JSON Response → normalizeResponse()
+normalizeResponse → Dashboard UI
+Layout → Keepalive Ping → /health
+BackendStatusBubble → /health + Error Display
+
+──────────────────────────────────────────────────────────────
+📦 REQUIRED PACKAGES (Base44)
+"dependencies": {
+  "react": "latest",
+  "next": "latest",
+  "tailwindcss": "latest",
+  "framer-motion": "latest",
+  "lucide-react": "latest",
+  "@tanstack/react-query": "latest",
+  "shadcn/ui": "latest"
+}
+──────────────────────────────────────────────────────────────
+✅ RULES OF CLEAN STRUCTURE:
+- אין קובצי JS כפולים (רק StockronEngine אחד)
+- אין קריאות fetch מפוזרות – רק דרך StockronEngine.js
+- כל בדיקות שרת עוברות דרך Bubble ו־Keepalive
+- לכל Card יש קובץ עצמאי עם Props אחידים
+- לא משאירים console.log בקוד הסופי
+──────────────────────────────────────────────────────────────
