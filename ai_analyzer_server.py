@@ -177,7 +177,7 @@ def _scores_from(f: Dict[str, Optional[float]]) -> Tuple[float, float, float, fl
     if beta and beta > 1.5:
         catalyst -= 5
 
-    clamp = lambda x: float(max(0, min(100, round(x)))))
+    clamp = lambda x: float(max(0, min(100, round(x))))
     quant = clamp(quant); quality = clamp(quality); catalyst = clamp(catalyst)
     overall = round(0.4 * quant + 0.4 * quality + 0.2 * catalyst, 2)
     return quant, quality, catalyst, overall
